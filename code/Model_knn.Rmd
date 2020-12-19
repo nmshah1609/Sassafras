@@ -1,0 +1,507 @@
+---
+title: "Model_knn"
+output: html_document
+---
+
+```{r}
+rm(list = ls())
+```
+
+```{r}
+X_train = read.table('Clean_X_train_mean_pro.csv',sep = ',',header = TRUE,stringsAsFactors = FALSE)
+X_test = read.table('Clean_X_test_mean_pro.csv',sep = ',',header = TRUE,stringsAsFactors = FALSE)
+Y_train = read.table('Clean_Y_train_mean_pro.csv',sep = ',',header = TRUE,stringsAsFactors = FALSE)
+Y_test = read.table('Ytest.txt',sep = ',',header = TRUE,stringsAsFactors = FALSE)
+X_test_id <- X_test
+```
+
+
+
+
+```{r}
+library(caret)
+library(tidyverse)
+library(caTools)
+library(nnet)
+library(lattice)
+library(grid)
+library(DMwR)
+library(dplyr)
+
+```
+
+```{r}
+maxs <- apply(X_train,2,max)
+mins <- apply(X_train, 2,min)
+
+
+scaled <- as.data.frame(scale(X_train,center = mins,scale = maxs - mins))
+
+```
+
+
+
+```{r}
+# try to do validation and traning
+set.seed(42)
+
+index <- sample(c(1,2,3),nrow(scaled),replace = TRUE,prob = c(0.4, 0.1, 0.5))
+training.X.df <- X_train[index ==1,]
+validuating.X.df <- X_train[index==2,]
+testing.X.df <- X_train[index ==3,]
+
+training.Y.df <- Y_train[index ==1,]
+validuating.Y.df <- Y_train[index==2,]
+testing.Y.df <- Y_train[index ==3,]
+```
+
+
+
+
+```{r}
+X.training <- training.X.df %>% select(-Id)
+X.validuating <- validuating.X.df %>% select(-Id)
+X.testing <- testing.X.df %>% select(-Id)
+
+Y.training <- training.Y.df %>% select(-Id)
+Y.validuating <- validuating.Y.df %>% select(-Id)
+Y.testing <- testing.Y.df %>% select(-Id)
+```
+
+
+```{r}
+X_test <- subset(X_test,select = -Id)
+```
+
+
+X.training <- scale(X.training)
+X_test <- scale(X_test)
+X.validuating <- scale(X.validuating)
+X.testing <- scale(X.testing)
+
+
+
+
+
+```{r knn}
+library(class)
+library(FNN)
+library(MASS)
+#sqrt(nrow(X.training))
+```
+```{r}
+boxplot(X.training,character.only =T)
+```
+
+
+
+```{r}
+library(Metrics) 
+```
+
+
+
+```{r}
+knn.list <- list()
+knn.list[[1]] <- knn.reg(train=X.training, test = X_test,y=Y.training$Z01,k=241)$pred
+knn.list[[2]] <- knn.reg(train=X.training, test = X_test,y=Y.training$Z02,k=200)$pred
+knn.list[[3]] <- knn.reg(train=X.training, test = X_test,y=Y.training$Z03,k=800)$pred
+knn.list[[4]] <- knn.reg(train=X.training, test = X_test,y=Y.training$Z04,k=50)$pred
+knn.list[[5]] <- knn.reg(train=X.training, test = X_test,y=Y.training$Z05,k=800)$pred
+knn.list[[6]] <- knn.reg(train=X.training, test = X_test,y=Y.training$Z06,k=50)$pred
+knn.list[[7]] <- knn.reg(train=X.training, test = X_test,y=Y.training$Z07,k=800)$pred
+knn.list[[8]] <- knn.reg(train=X.training, test = X_test,y=Y.training$Z08,k=800)$pred
+knn.list[[9]] <- knn.reg(train=X.training, test = X_test,y=Y.training$Z09,k=400)$pred
+knn.list[[10]] <- knn.reg(train=X.training, test = X_test,y=Y.training$Z10,k=50)$pred
+knn.list[[11]] <- knn.reg(train=X.training, test = X_test,y=Y.training$Z11,k=450)$pred
+knn.list[[12]] <- knn.reg(train=X.training, test = X_test,y=Y.training$Z12,k=800)$pred
+knn.list[[13]] <- knn.reg(train=X.training, test = X_test,y=Y.training$Z13,k=600)$pred
+knn.list[[14]] <- knn.reg(train=X.training, test = X_test,y=Y.training$Z14,k=800)$pred
+```
+
+```{r}
+library(nnet)
+n.nnets = 20 ## repeat 20 times
+all.MSEs = rep(0, times = 20) ## create an empty box to store MSE for each run 
+all.nnets = list(1:20)
+for(i in 1:n.nnets){
+  nnet.1 = nnet(y = Y.training$Z14, x = X.training, linout = TRUE, size = 5,
+                decay = 2, maxit = 500, trace = FALSE)
+  this.MSE = nnet.1$value/nrow(X.training)
+  all.MSEs[i] = this.MSE
+  all.nnets[[i]] = nnet.1
+}
+all.MSEs
+(min_MSE.1 = min(all.MSEs))
+ind.best = which.min(all.MSEs)
+fit.nnet.best = all.nnets[[ind.best]] ## choose the run with the smallest MSE and use that fit as our model
+pred.nnet = predict(fit.nnet.best, X_test)
+
+```
+
+
+
+```{r}
+knn.dataframe <- as.data.frame(do.call(cbind,knn.list))
+```
+
+
+```{r}
+library(sqldf)
+library(RSQLite)
+library(tidyverse)
+library(dplyr)
+```
+
+```{r}
+#knn.predict.dataframe <- as.data.frame(do.call(cbind,knn.list))
+names(knn.dataframe)<-c("Z01","Z02","Z03","Z04","Z05","Z06","Z07","Z08","Z09","Z10","Z11","Z12","Z13","Z14")
+```
+
+
+```{r}
+X_test_df <- cbind(X_test_id,knn.dataframe)
+```
+
+
+```{r}
+x_test.predict.df <- X_test_df %>% dplyr::select(Id,Z01,Z02,Z03,Z04,Z05,Z06,Z07,Z08,Z09,Z10,Z11,Z12,Z13,Z14)
+
+```
+
+```{r}
+Y_test = read.table('Ytest.txt',sep = ',',header = TRUE,stringsAsFactors = FALSE)
+```
+
+
+```{r}
+split <- list()
+a<- list()
+b<-list()
+
+for (i in 1:nrow(Y_test)){
+  split[[i]] <- unlist(strsplit(Y_test$Id[i],":"))
+  a <- split[[i]][2]
+  b <- split[[i]][1]
+  Y_test$Value[i]  <- x_test.predict.df[i,a]
+  Y_test$Id[i] <-split[[i]][1]
+}
+```
+
+
+```{r}
+Y_test_lm <- data.frame('Id'=Y_test$Id,'Value' =Y_test$Value)
+
+
+write.csv(Y_test_lm, 'Y_test_knn_scaled.csv', row.names = FALSE)
+```
+
+
+```{r}
+library(Metrics)
+```
+
+
+
+```{r}
+set.seed(2)
+error <- c()
+ame <- c()
+neighbors <- c(50,100,150,200,241,300,350,400,450,500,600,800)
+for (i in seq_along(neighbors)) {
+  knn_res <- knn.reg(train=X.training, test = X.validuating,y=Y.training$Z01,k=neighbors[i])
+  error[i] <- RMSE(Y.validuating$Z01, knn_res$pred)
+  ame[i] <- mae(Y.validuating$Z01, knn_res$pred)
+}
+
+dfx <- data.frame(neighbors,error =error,ame=ame)
+
+ggplot(data=dfx, aes(x=neighbors,y=ame))+geom_point()+geom_line(color="red")
+
+
+ggplot(data=dfx, aes(x=neighbors,y=error))+geom_point()+geom_line(color="blue")
+# 241
+```
+
+
+
+
+```{r}
+set.seed(2)
+error <- c()
+ame <- c()
+neighbors <- c(50,100,150,200,241,300,350,400,450,500,600,800)
+for (i in seq_along(neighbors)) {
+  knn_res <- knn.reg(train=X.training, test = X.validuating,y=Y.training$Z02,k=neighbors[i])
+  error[i] <- RMSE(Y.validuating$Z02, knn_res$pred)
+  ame[i] <- mae(Y.validuating$Z02, knn_res$pred)
+}
+
+dfx <- data.frame(neighbors,error =error,ame=ame)
+
+ggplot(data=dfx, aes(x=neighbors,y=ame))+geom_point()+geom_line(color="red")
+
+
+ggplot(data=dfx, aes(x=neighbors,y=error))+geom_point()+geom_line(color="blue")
+# 200
+```
+
+
+
+```{r}
+set.seed(2)
+error <- c()
+ame <- c()
+neighbors <- c(50,100,150,200,241,300,350,400,450,500,600,800)
+for (i in seq_along(neighbors)) {
+  knn_res <- knn.reg(train=X.training, test = X.validuating,y=Y.training$Z03,k=neighbors[i])
+  error[i] <- RMSE(Y.validuating$Z03, knn_res$pred)
+  ame[i] <- mae(Y.validuating$Z03, knn_res$pred)
+}
+
+dfx <- data.frame(neighbors,error =error,ame=ame)
+
+ggplot(data=dfx, aes(x=neighbors,y=ame))+geom_point()+geom_line(color="red")
+
+
+ggplot(data=dfx, aes(x=neighbors,y=error))+geom_point()+geom_line(color="blue")
+# 800
+```
+
+
+```{r}
+set.seed(2)
+error <- c()
+ame <- c()
+neighbors <- c(50,100,150,200,241,300,350,400,450,500,600,800)
+for (i in seq_along(neighbors)) {
+  knn_res <- knn.reg(train=X.training, test = X.validuating,y=Y.training$Z04,k=neighbors[i])
+  error[i] <- RMSE(Y.validuating$Z04, knn_res$pred)
+  ame[i] <- mae(Y.validuating$Z04, knn_res$pred)
+}
+
+dfx <- data.frame(neighbors,error =error,ame=ame)
+
+ggplot(data=dfx, aes(x=neighbors,y=ame))+geom_point()+geom_line(color="red")
+
+
+ggplot(data=dfx, aes(x=neighbors,y=error))+geom_point()+geom_line(color="blue")
+# 50
+```
+
+
+
+
+```{r}
+set.seed(2)
+error <- c()
+ame <- c()
+neighbors <- c(50,100,150,200,241,300,350,400,450,500,600,800)
+for (i in seq_along(neighbors)) {
+  knn_res <- knn.reg(train=X.training, test = X.validuating,y=Y.training$Z05,k=neighbors[i])
+  error[i] <- RMSE(Y.validuating$Z05, knn_res$pred)
+  ame[i] <- mae(Y.validuating$Z05, knn_res$pred)
+}
+
+dfx <- data.frame(neighbors,error =error,ame=ame)
+
+ggplot(data=dfx, aes(x=neighbors,y=ame))+geom_point()+geom_line(color="red")
+
+
+ggplot(data=dfx, aes(x=neighbors,y=error))+geom_point()+geom_line(color="blue")
+#800
+```
+
+
+
+```{r}
+set.seed(2)
+error <- c()
+ame <- c()
+neighbors <- c(50,100,150,200,241,300,350,400,450,500,600,800)
+for (i in seq_along(neighbors)) {
+  knn_res <- knn.reg(train=X.training, test = X.validuating,y=Y.training$Z06,k=neighbors[i])
+  error[i] <- RMSE(Y.validuating$Z06, knn_res$pred)
+  ame[i] <- mae(Y.validuating$Z06, knn_res$pred)
+}
+
+dfx <- data.frame(neighbors,error =error,ame=ame)
+
+ggplot(data=dfx, aes(x=neighbors,y=ame))+geom_point()+geom_line(color="red")
+
+
+ggplot(data=dfx, aes(x=neighbors,y=error))+geom_point()+geom_line(color="blue")
+#50
+```
+
+
+```{r}
+set.seed(2)
+error <- c()
+ame <- c()
+neighbors <- c(50,100,150,200,241,300,350,400,450,500,600,800)
+for (i in seq_along(neighbors)) {
+  knn_res <- knn.reg(train=X.training, test = X.validuating,y=Y.training$Z07,k=neighbors[i])
+  error[i] <- RMSE(Y.validuating$Z07, knn_res$pred)
+  ame[i] <- mae(Y.validuating$Z07, knn_res$pred)
+}
+
+dfx <- data.frame(neighbors,error =error,ame=ame)
+
+ggplot(data=dfx, aes(x=neighbors,y=ame))+geom_point()+geom_line(color="red")
+
+
+ggplot(data=dfx, aes(x=neighbors,y=error))+geom_point()+geom_line(color="blue")
+
+```
+
+
+
+```{r}
+set.seed(2)
+error <- c()
+ame <- c()
+neighbors <- c(50,100,150,200,241,300,350,400,450,500,600,800)
+for (i in seq_along(neighbors)) {
+  knn_res <- knn.reg(train=X.training, test = X.validuating,y=Y.training$Z08,k=neighbors[i])
+  error[i] <- RMSE(Y.validuating$Z08, knn_res$pred)
+  ame[i] <- mae(Y.validuating$Z08, knn_res$pred)
+}
+
+dfx <- data.frame(neighbors,error =error,ame=ame)
+
+ggplot(data=dfx, aes(x=neighbors,y=ame))+geom_point()+geom_line(color="red")
+
+
+ggplot(data=dfx, aes(x=neighbors,y=error))+geom_point()+geom_line(color="blue")
+# 800
+```
+
+
+
+
+```{r}
+set.seed(2)
+error <- c()
+ame <- c()
+neighbors <- c(50,100,150,200,241,300,350,400,450,500,600,800)
+for (i in seq_along(neighbors)) {
+  knn_res <- knn.reg(train=X.training, test = X.validuating,y=Y.training$Z09,k=neighbors[i])
+  error[i] <- RMSE(Y.validuating$Z09, knn_res$pred)
+  ame[i] <- mae(Y.validuating$Z09, knn_res$pred)
+}
+
+dfx <- data.frame(neighbors,error =error,ame=ame)
+
+ggplot(data=dfx, aes(x=neighbors,y=ame))+geom_point()+geom_line(color="red")
+
+
+ggplot(data=dfx, aes(x=neighbors,y=error))+geom_point()+geom_line(color="blue")
+#400
+```
+
+
+
+```{r}
+set.seed(2)
+error <- c()
+ame <- c()
+neighbors <- c(50,100,150,200,241,300,350,400,450,500,600,800)
+for (i in seq_along(neighbors)) {
+  knn_res <- knn.reg(train=X.training, test = X.validuating,y=Y.training$Z10,k=neighbors[i])
+  error[i] <- RMSE(Y.validuating$Z10, knn_res$pred)
+  ame[i] <- mae(Y.validuating$Z10, knn_res$pred)
+}
+
+dfx <- data.frame(neighbors,error =error,ame=ame)
+
+ggplot(data=dfx, aes(x=neighbors,y=ame))+geom_point()+geom_line(color="red")
+
+
+ggplot(data=dfx, aes(x=neighbors,y=error))+geom_point()+geom_line(color="blue")
+# 50
+```
+
+
+
+```{r}
+set.seed(2)
+error <- c()
+ame <- c()
+neighbors <- c(50,100,150,200,241,300,350,400,450,500,600,800)
+for (i in seq_along(neighbors)) {
+  knn_res <- knn.reg(train=X.training, test = X.validuating,y=Y.training$Z11,k=neighbors[i])
+  error[i] <- RMSE(Y.validuating$Z11, knn_res$pred)
+  ame[i] <- mae(Y.validuating$Z11, knn_res$pred)
+}
+
+dfx <- data.frame(neighbors,error =error,ame=ame)
+
+ggplot(data=dfx, aes(x=neighbors,y=ame))+geom_point()+geom_line(color="red")
+
+
+ggplot(data=dfx, aes(x=neighbors,y=error))+geom_point()+geom_line(color="blue")
+#450
+```
+
+
+```{r}
+set.seed(2)
+error <- c()
+ame <- c()
+neighbors <- c(50,100,150,200,241,300,350,400,450,500,600,800)
+for (i in seq_along(neighbors)) {
+  knn_res <- knn.reg(train=X.training, test = X.validuating,y=Y.training$Z12,k=neighbors[i])
+  error[i] <- RMSE(Y.validuating$Z12, knn_res$pred)
+  ame[i] <- mae(Y.validuating$Z12, knn_res$pred)
+}
+
+dfx <- data.frame(neighbors,error =error,ame=ame)
+
+ggplot(data=dfx, aes(x=neighbors,y=ame))+geom_point()+geom_line(color="red")
+
+
+ggplot(data=dfx, aes(x=neighbors,y=error))+geom_point()+geom_line(color="blue")
+# 800
+```
+
+```{r}
+set.seed(2)
+error <- c()
+ame <- c()
+neighbors <- c(50,100,150,200,241,300,350,400,450,500,600,800)
+for (i in seq_along(neighbors)) {
+  knn_res <- knn.reg(train=X.training, test = X.validuating,y=Y.training$Z13,k=neighbors[i])
+  error[i] <- RMSE(Y.validuating$Z13, knn_res$pred)
+  ame[i] <- mae(Y.validuating$Z13, knn_res$pred)
+}
+
+dfx <- data.frame(neighbors,error =error,ame=ame)
+
+ggplot(data=dfx, aes(x=neighbors,y=ame))+geom_point()+geom_line(color="red")
+
+
+ggplot(data=dfx, aes(x=neighbors,y=error))+geom_point()+geom_line(color="blue")
+#600
+```
+
+
+```{r}
+set.seed(2)
+error <- c()
+ame <- c()
+neighbors <- c(50,100,150,200,241,300,350,400,450,500,600,800)
+for (i in seq_along(neighbors)) {
+  knn_res <- knn.reg(train=X.training, test = X.validuating,y=Y.training$Z14,k=neighbors[i])
+  error[i] <- RMSE(Y.validuating$Z14, knn_res$pred)
+  ame[i] <- mae(Y.validuating$Z14, knn_res$pred)
+}
+
+dfx <- data.frame(neighbors,error =error,ame=ame)
+
+ggplot(data=dfx, aes(x=neighbors,y=ame))+geom_point()+geom_line(color="red")
+
+
+ggplot(data=dfx, aes(x=neighbors,y=error))+geom_point()+geom_line(color="blue")
+#800 /600
+```

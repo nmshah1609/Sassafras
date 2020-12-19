@@ -1,0 +1,541 @@
+---
+title: "Model_construct"
+output: html_document
+---
+```{r}
+rm(list = ls())
+```
+
+
+```{r}
+X_train = read.table('Clean_X_train_mean_pro.csv',sep = ',',header = TRUE,stringsAsFactors = FALSE)
+X_test = read.table('Clean_X_test_mean_pro.csv',sep = ',',header = TRUE,stringsAsFactors = FALSE)
+Y_train = read.table('Clean_Y_train_mean_pro.csv',sep = ',',header = TRUE,stringsAsFactors = FALSE)
+Y_test = read.table('Ytest.txt',sep = ',',header = TRUE,stringsAsFactors = FALSE)
+```
+
+
+```{r}
+library(caret)
+library(tidyverse)
+library(caTools)
+library(nnet)
+library(lattice)
+library(grid)
+library(DMwR)
+
+```
+
+```{r}
+summary(X_train)
+```
+
+
+
+```{r}
+maxs <- apply(X_train,2,max)
+mins <- apply(X_train, 2,min)
+
+
+scaled <- as.data.frame(scale(X_train,center = mins,scale = maxs - mins))
+
+
+```
+
+
+
+```{r}
+# try to do validation and traning
+set.seed(42)
+
+index <- sample(c(1,2),nrow(scaled),replace = TRUE,prob = c(0.8, 0.2))
+training.X <- X_train[index ==1,]
+validation.X <- X_train[index ==2,]
+training.Y <- Y_train[index ==1,]
+validation.Y <- Y_train[index ==2,]
+```
+
+
+
+```{r}
+library(sqldf)
+library(RSQLite)
+library(tidyverse)
+library(dplyr)
+# nnet
+training <- full_join(training.X,training.Y,by="Id")
+
+# testing <- full_join(validation.X,validation.Y,by="Id")
+
+training.X <- training.X %>% select(-Id)
+validation.X <- validation.X %>% select(-Id)
+training.Y <- training.Y %>% select(-Id)
+validation.Y <- validation.Y %>% select(-Id)
+
+```
+
+```{r}
+training <- training %>% select(-Id)
+```
+
+```{r}
+library(MASS)
+```
+
+
+```{r lm}
+# linear model
+
+n <- names(training.X)
+z <- names(training.Y)
+# names(training)
+# paste(n,collapse = "+")
+# paste(paste0(z,"~"),paste(n,collapse = "+"))
+# paste(paste(training$y,"~"),paste(n,collapse = "+"))
+
+# as.formula(paste(paste(z[2],"~"),paste(n,collapse = "+")))
+
+lm.fit = list()
+formula = list()
+lm.predict = list()
+
+for (y in 1:14) {
+  n <- names(training.X)
+  z <- names(training.Y)
+  
+  formula[[y]] = paste(paste(paste0("training.Y","$",z[y]),"~"),paste(n,collapse = "+"))
+  lm.fit[[y]]<- lm(as.formula(formula[[y]]),data = training.X)
+  lm.predict[[y]] <- predict(lm.fit[[y]],newdata = X_test)
+  
+}
+
+
+
+```
+
+
+```{r}
+car::vif(lm.fit[[14]])
+```
+
+
+```{r}
+library(caret)
+VarImportant <- list()
+for (i in 1:14) {
+  VarImportant[[i]] <- varImp(lm.fit[[i]])
+}
+
+```
+
+```{r}
+VarImportant[[14]]
+```
+
+
+
+
+```{r}
+roc_imp <- varImp(lm.fit[[1]],scale=FALSE)
+roc_imp
+```
+
+
+
+
+```{r}
+lm.predict.dataframe <- as.data.frame(do.call(cbind,lm.predict))
+names(lm.predict.dataframe)<-c("Z01","Z02","Z03","Z04","Z05","Z06","Z07","Z08","Z09","Z10","Z11","Z12","Z13","Z14")
+X_test_df <- cbind(X_test,lm.predict.dataframe)
+X_test_df <- X_test_df %>% select("Id","Z01","Z02","Z03","Z04","Z05","Z06","Z07","Z08","Z09","Z10","Z11","Z12","Z13","Z14")
+# df <- right_join(X_train,Y_train,by='Id') %>% select("Id","Z01","Z02","Z03","Z04","Z05","Z06","Z07","Z08","Z09","Z10","Z11","Z12","Z13","Z14")
+# X_test_df<-rbind(X_test_df,df)
+```
+
+
+
+
+
+
+```{r}
+split <- list()
+a<- list()
+b<-list()
+
+for (i in 1:nrow(Y_test)){
+  split[[i]] <- unlist(strsplit(Y_test$Id[i],":"))
+  a <- split[[i]][2]
+  b <- split[[i]][1]
+  Y_test$Value[i]  <- X_test_df[i,a]
+  Y_test$Id[i] <-split[[i]][1]
+}
+```
+
+
+
+```{r}
+
+
+
+Y_test_lm <- data.frame('Id'=Y_test$Id,'Value' =Y_test$Value)
+
+
+write.csv(Y_test_lm, 'Y_test_lm_mean.csv', row.names = FALSE)
+
+```
+
+
+
+
+
+```{r lm}
+
+
+# names(training)
+# paste(n,collapse = "+")
+# paste(paste0(z,"~"),paste(n,collapse = "+"))
+# paste(paste(training$y,"~"),paste(n,collapse = "+"))
+
+# as.formula(paste(paste(z[2],"~"),paste(n,collapse = "+")))
+library(ridge)
+
+
+lm.lasso.fit = list()
+formula.lasso = list()
+lm.lasso.predict = list()
+for (y in 1:14) {
+  n <- names(training.X)
+  z <- names(training.Y)
+  formula.lasso[[y]] = paste(paste(paste0("training.Y","$",z[y]),"~"),paste(n,collapse = "+"))
+  lm.lasso.fit[[y]]<- linearRidge(as.formula(formula.lasso[[y]]),data = training.X)
+  lm.lasso.predict[[y]] <- predict(lm.lasso.fit[[y]],newdata = X_test)
+
+}
+
+
+
+```
+
+
+
+
+
+```{r}
+lm.lasso.predict.dataframe <- as.data.frame(do.call(cbind,lm.lasso.predict))
+names(lm.lasso.predict.dataframe)<-c("Z01","Z02","Z03","Z04","Z05","Z06","Z07","Z08","Z09","Z10","Z11","Z12","Z13","Z14")
+X_test_df <- cbind(X_test,lm.lasso.predict.dataframe)
+X_test_df <- X_test_df %>% select("Id","Z01","Z02","Z03","Z04","Z05","Z06","Z07","Z08","Z09","Z10","Z11","Z12","Z13","Z14")
+# df <- right_join(X_train,Y_train,by='Id') %>% select("Id","Z01","Z02","Z03","Z04","Z05","Z06","Z07","Z08","Z09","Z10","Z11","Z12","Z13","Z14")
+# X_test_df<-rbind(X_test_df,df)
+```
+
+
+```{r}
+split <- list()
+a<- list()
+b<-list()
+
+for (i in 1:nrow(Y_test)){
+  split[[i]] <- unlist(strsplit(Y_test$Id[i],":"))
+  a <- split[[i]][2]
+  b <- split[[i]][1]
+  Y_test$Value[i]  <- X_test_df[i,a]
+  Y_test$Id[i] <-split[[i]][1]
+}
+```
+
+
+
+```{r}
+
+
+Y_test_lm <- data.frame('Id'=Y_test$Id,'Value' =Y_test$Value)
+
+
+write.csv(Y_test_lm, 'Y_test_lm_ridge.csv', row.names = FALSE)
+
+```
+
+```{r}
+library(pls)
+```
+
+
+
+```{r lm}
+
+
+# names(training)
+# paste(n,collapse = "+")
+# paste(paste0(z,"~"),paste(n,collapse = "+"))
+# paste(paste(training$y,"~"),paste(n,collapse = "+"))
+
+# as.formula(paste(paste(z[2],"~"),paste(n,collapse = "+")))
+
+
+
+
+lm.plsr.fit = list()
+formula.plsr = list()
+lm.plsr.predict = list()
+for (y in 1:14) {
+  n <- names(training.X)
+  z <- names(training.Y)
+  formula.plsr[[y]] = paste(paste(paste0("training.Y","$",z[y]),"~"),paste(n,collapse = "+"))
+  lm.plsr.fit[[y]]<- plsr(as.formula(formula.plsr[[y]]),data = training.X,scale=T,validation="CV")
+  lm.plsr.predict[[y]] <- predict(lm.plsr.fit[[y]],newdata = X_test)
+
+}
+
+
+
+```
+
+
+
+
+
+```{r}
+lm.plsr.predict.dataframe <- as.data.frame(do.call(cbind,lm.plsr.predict))
+names(lm.plsr.predict.dataframe)<-c("Z01","Z02","Z03","Z04","Z05","Z06","Z07","Z08","Z09","Z10","Z11","Z12","Z13","Z14")
+X_test_df <- cbind(X_test,lm.plsr.predict.dataframe)
+X_test_df <- X_test_df %>% select("Id","Z01","Z02","Z03","Z04","Z05","Z06","Z07","Z08","Z09","Z10","Z11","Z12","Z13","Z14")
+
+```
+
+
+```{r}
+split <- list()
+a<- list()
+b<-list()
+
+for (i in 1:nrow(Y_test)){
+  split[[i]] <- unlist(strsplit(Y_test$Id[i],":"))
+  a <- split[[i]][2]
+  b <- split[[i]][1]
+  Y_test$Value[i]  <- X_test_df[i,a]
+  Y_test$Id[i] <-split[[i]][1]
+}
+```
+
+
+
+```{r}
+
+
+Y_test_lm <- data.frame('Id'=Y_test$Id,'Value' =Y_test$Value)
+
+
+write.csv(Y_test_lm, 'Y_test_lm_plsr.csv', row.names = FALSE)
+
+```
+
+
+
+```{r}
+library(pls)
+```
+
+
+
+```{r lm}
+
+lm.plsr.fit = list()
+formula.plsr = list()
+lm.plsr.predict = list()
+for (y in 1:14) {
+  n <- names(training.X)
+  z <- names(training.Y)
+  formula.plsr[[y]] = paste(paste(z[y],"~"),paste(n,collapse = "+"))
+  lm.plsr.fit[[y]]<- plsr(as.formula(formula.plsr[[y]]),data = training,scale=T,validation="CV")
+  lm.plsr.predict[[y]] <- predict(lm.plsr.fit[[y]],newdata = X_test)
+
+}
+
+
+
+```
+
+
+
+
+
+```{r}
+lm.plsr.predict.dataframe <- as.data.frame(do.call(cbind,lm.plsr.predict))
+names(lm.plsr.predict.dataframe)<-c("Z01","Z02","Z03","Z04","Z05","Z06","Z07","Z08","Z09","Z10","Z11","Z12","Z13","Z14")
+X_test_df <- cbind(X_test,lm.plsr.predict.dataframe)
+X_test_df <- X_test_df %>% select("Id","Z01","Z02","Z03","Z04","Z05","Z06","Z07","Z08","Z09","Z10","Z11","Z12","Z13","Z14")
+# df <- right_join(X_train,Y_train,by='Id') %>% select("Id","Z01","Z02","Z03","Z04","Z05","Z06","Z07","Z08","Z09","Z10","Z11","Z12","Z13","Z14")
+# X_test_df<-rbind(X_test_df,df)
+```
+
+
+```{r}
+split <- list()
+a<- list()
+b<-list()
+
+for (i in 1:nrow(Y_test)){
+  split[[i]] <- unlist(strsplit(Y_test$Id[i],":"))
+  a <- split[[i]][2]
+  b <- split[[i]][1]
+  Y_test$Value[i]  <- X_test_df[i,a]
+  Y_test$Id[i] <-split[[i]][1]
+}
+```
+
+
+
+```{r}
+
+
+Y_test_lm <- data.frame('Id'=Y_test$Id,'Value' =Y_test$Value)
+
+
+write.csv(Y_test_lm, 'Y_test_lm_plsr_mean7.csv', row.names = FALSE)
+
+```
+
+
+
+
+
+
+```{r}
+library(e1071)
+n <- names(training.X)
+z <- names(training.Y)
+# names(training)
+# paste(n,collapse = "+")
+# paste(paste0(z,"~"),paste(n,collapse = "+"))
+# paste(paste(training$y,"~"),paste(n,collapse = "+"))
+
+# as.formula(paste(paste(z[2],"~"),paste(n,collapse = "+")))
+
+lm.fit = list()
+formula = list()
+lm.predict = list()
+for (y in 1:14) {
+  n <- names(training.X)
+  z <- names(training.Y)
+  formula[[y]] = paste(paste(z[y],"~"),paste(n,collapse = "+"))
+  lm.fit[[y]]<- svm(as.formula(formula[[y]]),data = training)
+  lm.predict[[y]] <- predict(lm.fit[[y]],newdata = X_test)
+
+}
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+lm.testing.fit = list()
+formula.testing = list()
+lm.testing.predict = list()
+for (y in 1:14) {
+  n <- names(training.X)
+  z <- names(training.Y)
+  formula.testing[[y]] = paste(paste(z[y],"~"),paste(n,collapse = "+"))
+  lm.testing.fit[[y]]<- lm(as.formula(formula[[y]]),data = training)
+  lm.testing.predict[[y]] <- predict(lm.testing.fit[[y]],newdata = validation.X)
+
+}
+
+```
+
+```{r}
+library(MLmetrics)
+MAE(validation.Y$Z14,lm.testing.predict[[14]])
+```
+
+
+```{r lm}
+library(ridge)
+
+
+lm.lasso.fit = list()
+formula.lasso = list()
+lm.lasso.predict = list()
+for (y in 1:14) {
+  n <- names(training.X)
+  z <- names(training.Y)
+  formula.lasso[[y]] = paste(paste(z[y],"~"),paste(n,collapse = "+"))
+  lm.lasso.fit[[y]]<- linearRidge(as.formula(formula.lasso[[y]]),data = training)
+  lm.lasso.predict[[y]] <- predict(lm.lasso.fit[[y]],newdata = X_test)
+
+}
+
+
+
+
+```
+
+
+
+
+
+```{r}
+lm.predict.dataframe <- as.data.frame(do.call(cbind,lm.predict))
+names(lm.predict.dataframe)<-c("Z01","Z02","Z03","Z04","Z05","Z06","Z07","Z08","Z09","Z10","Z11","Z12","Z13","Z14")
+X_test_df <- cbind(X_test,lm.predict.dataframe)
+X_test_df <- X_test_df %>% select("Id","Z01","Z02","Z03","Z04","Z05","Z06","Z07","Z08","Z09","Z10","Z11","Z12","Z13","Z14")
+# df <- right_join(X_train,Y_train,by='Id') %>% select("Id","Z01","Z02","Z03","Z04","Z05","Z06","Z07","Z08","Z09","Z10","Z11","Z12","Z13","Z14")
+# X_test_df<-rbind(X_test_df,df)
+```
+
+
+
+
+```{r}
+split <- list()
+split<- unlist(strsplit(Y_test$Id[1],":"))
+split<- unlist(strsplit(Y_test$Id[2],":"))
+# get the Y_test result: 
+X_test_df[split[1],split[2]]
+split
+```
+
+```{r}
+split <- list()
+a<- list()
+b<-list()
+
+for (i in 1:nrow(Y_test)){
+  split[[i]] <- unlist(strsplit(Y_test$Id[i],":"))
+  a <- split[[i]][2]
+  b <- split[[i]][1]
+  Y_test$Value[i]  <- X_test_df[i,a]
+  Y_test$Id[i] <-split[[i]][1]
+}
+```
+
+
+
+
+
+```{r}
+which(is.na(Y_test))
+
+```
+
+```{r}
+
+
+
+Y_test_lm <- data.frame('Id'=Y_test$Id,'Value' =Y_test$Value)
+
+
+write.csv(Y_test_lm, 'Y_test_lm_mean_scale.csv', row.names = FALSE)
+
+```
+

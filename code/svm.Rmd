@@ -1,0 +1,237 @@
+---
+title: "SVM-Module2"
+output: html_document
+---
+
+```{r}
+rm(list = ls())
+```
+
+
+```{r}
+X_train = read.table('x_train_preprocessed.csv',sep = ',',header = TRUE,stringsAsFactors = FALSE)
+X_test = read.table('x_test_preprocessed.csv',sep = ',',header = TRUE,stringsAsFactors = FALSE)
+Y_train = read.table('y_train_preprocessed.csv',sep = ',',header = TRUE,stringsAsFactors = FALSE)
+Y_test = read.table('Ytest.txt',sep = ',',header = TRUE,stringsAsFactors = FALSE)
+```
+
+
+```{r}
+library(caret)
+library(tidyverse)
+library(caTools)
+library(nnet)
+library(lattice)
+library(grid)
+library(DMwR)
+
+```
+
+```{r}
+summary(X_train)
+```
+
+
+
+```{r}
+maxs <- apply(X_train,2,max)
+mins <- apply(X_train, 2,min)
+
+
+scaled <- as.data.frame(scale(X_train,center = mins,scale = maxs - mins))
+
+```
+
+
+
+```{r}
+# try to do validation and traning
+set.seed(42)
+
+index <- sample(c(1,2),nrow(scaled),replace = TRUE,prob = c(0.8, 0.2))
+training.X <- X_train[index ==1,]
+validation.X <- X_train[index ==2,]
+training.Y <- Y_train[index ==1,]
+validation.Y <- Y_train[index ==2,]
+```
+
+
+```{r}
+library(sqldf)
+library(RSQLite)
+library(tidyverse)
+library(dplyr)
+# nnet
+training <- full_join(training.X,training.Y,by="Id")
+
+testing <- full_join(validation.X,validation.Y,by="Id")
+
+training.X <- training.X %>% select(-Id)
+validation.X <- validation.X %>% select(-Id)
+training.Y <- training.Y %>% select(-Id)
+validation.Y <- validation.Y %>% select(-Id)
+
+```
+
+```{r}
+training <- training %>% select(-Id)
+```
+
+```{r}
+library(e1071)
+
+## svm
+svm.testing.fit = list()
+formula.testing = list()
+svm.testing.predict = list()
+
+for (y in 1:14) {
+  n <- names(training.X)
+  z <- names(training.Y)
+  formula.testing[[y]] = paste(paste(paste0("training.Y","$",z[y]),"~"),paste(n,collapse = "+"))
+  svm.testing.fit[[y]]<- svm(as.formula(formula.testing[[y]]),data = training.X, cost = 100, gamma = 1)
+  svm.testing.predict[[y]] <- predict(svm.testing.fit[[y]],newdata = validation.X)
+  print(y)
+}
+
+
+
+```
+
+
+```{r}
+library(MLmetrics)
+MAE(validation.Y$Z14, svm.testing.predict[[14]])
+```
+
+
+
+```{r svm}
+# svm linear model
+
+n <- names(training.X)
+z <- names(training.Y)
+
+svm.fit = list()
+formula = list()
+svm.predict = list()
+for (y in 1:14) {
+  n <- names(training.X)
+  z <- names(training.Y)
+  formula[[y]] = paste(paste(paste0("training.Y","$",z[y]),"~"),paste(n,collapse = "+"))
+  svm.fit[[y]]<- svm(as.formula(formula[[y]]),data = training.X, cost = 100, gamma = 1)
+  svm.predict[[y]] <- predict(svm.fit[[y]],newdata = X_test)
+
+}
+
+
+
+```
+
+
+
+```{r}
+## svm
+svm.testing.fit = list()
+formula.testing = list()
+svm.testing.predict = list()
+
+for (y in 1:14) {
+  n <- names(training.X)
+  z <- names(training.Y)
+  formula.testing[[y]] = paste(paste(paste0("training.Y","$",z[y]),"~"),paste(n,collapse = "+"))
+  svm.testing.fit[[y]]<- svm(as.formula(formula.testing[[y]]),data = training.X, cost = 100, gamma = 1, kernal = 'radial')
+  svm.testing.predict[[y]] <- predict(svm.testing.fit[[y]],newdata = validation.X)
+  print(y)
+}
+
+MAE(validation.Y$Z14, svm.testing.predict[[14]])
+
+```
+
+
+```{r svm-radial}
+# svm radial model
+
+n <- names(training.X)
+z <- names(training.Y)
+
+svm.fit = list()
+formula = list()
+svm.predict = list()
+for (y in 1:14) {
+  n <- names(training.X)
+  z <- names(training.Y)
+  formula[[y]] = paste(paste(paste0("training.Y","$",z[y]),"~"),paste(n,collapse = "+"))
+  svm.fit[[y]]<- svm(as.formula(formula[[y]]),data = training.X, cost = 100, gamma = 1, kernel = 'radial')
+  svm.predict[[y]] <- predict(svm.fit[[y]],newdata = X_test)
+
+}
+
+
+```
+
+
+
+```{r}
+library(caret)
+VarImportant <- list()
+for (i in 1:14) {
+  VarImportant[[i]] <- varImp(svm.fit[[i]])
+}
+
+```
+
+```{r}
+VarImportant[[14]]
+```
+
+```{r}
+roc_imp <- varImp(svm.fit[[1]],scale=FALSE)
+roc_imp
+```
+
+
+```{r}
+svm.predict.dataframe <- as.data.frame(do.call(cbind,svm.predict))
+names(svm.predict.dataframe)<-c("Z01","Z02","Z03","Z04","Z05","Z06","Z07","Z08","Z09","Z10","Z11","Z12","Z13","Z14")
+X_test_df <- cbind(X_test,svm.predict.dataframe)
+X_test_df <- X_test_df %>% select("Id","Z01","Z02","Z03","Z04","Z05","Z06","Z07","Z08","Z09","Z10","Z11","Z12","Z13","Z14")
+
+```
+
+
+```{r}
+split <- list()
+split<- unlist(strsplit(Y_test$Id[1],":"))
+split<- unlist(strsplit(Y_test$Id[2],":"))
+# get the Y_test result: 
+X_test_df[split[1],split[2]]
+split
+```
+
+```{r}
+split <- list()
+a<- list()
+b<-list()
+
+for (i in 1:nrow(Y_test)){
+  split[[i]] <- unlist(strsplit(Y_test$Id[i],":"))
+  a <- split[[i]][2]
+  b <- split[[i]][1]
+  Y_test$Value[i]  <- X_test_df[i,a]
+  Y_test$Id[i] <-split[[i]][1]
+}
+```
+
+
+```{r}
+
+
+
+Y_test_svm <- data.frame('Id'=Y_test$Id,'Value' =Y_test$Value)
+
+
+write.csv(Y_test_svm, 'Y_test_svm_mean_adj.csv', row.names = FALSE)
+
+```
